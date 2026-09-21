@@ -49,6 +49,7 @@ class Ticker(db.Model):
     price_to_sales = db.Column(db.Float)
     revenue_growth = db.Column(db.Float)
     market_cap = db.Column(db.Float)
+    day_change = db.Column(db.Float)  # powers the green/red coloring, like Industry.avg_daily_change
     last_fetched = db.Column(db.DateTime)
 
     def to_dict(self):
@@ -59,5 +60,6 @@ class Ticker(db.Model):
             "price_to_sales": self.price_to_sales,
             "revenue_growth": self.revenue_growth,
             "market_cap": self.market_cap,
+            "day_change": self.day_change,
             "last_fetched": self.last_fetched.isoformat() if self.last_fetched else None,
         }

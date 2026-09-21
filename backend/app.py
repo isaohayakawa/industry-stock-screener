@@ -90,6 +90,7 @@ def refresh_ticker_metrics_if_stale(symbol):
     ticker.price_to_sales = data.get("price_to_sales")
     ticker.revenue_growth = data.get("revenue_growth")
     ticker.market_cap = data.get("market_cap")
+    ticker.day_change = data.get("day_change")
     ticker.last_fetched = timestamp
 
     db.session.commit()

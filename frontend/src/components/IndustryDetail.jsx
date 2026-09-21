@@ -10,6 +10,7 @@ const PRESETS = [
 const COLUMNS = [
   { key: "symbol", label: "Symbol", numeric: false },
   { key: "company_name", label: "Company", numeric: false },
+  { key: "day_change", label: "Day Change", numeric: true },
   { key: "pe_ratio", label: "P/E", numeric: true },
   { key: "price_to_sales", label: "P/S", numeric: true },
   { key: "revenue_growth", label: "Rev Growth", numeric: true },
@@ -36,6 +37,8 @@ function formatCell(key, ticker) {
       return ticker.symbol;
     case "company_name":
       return ticker.company_name || "\u2014";
+    case "day_change":
+      return ticker.day_change != null ? `${ticker.day_change.toFixed(2)}%` : "\u2014";
     case "pe_ratio":
       return ticker.pe_ratio?.toFixed(2) ?? "\u2014";
     case "price_to_sales":
@@ -159,18 +162,26 @@ export default function IndustryDetail({ industryName, onBack }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {sorted.map((t) => (
-              <tr key={t.symbol} className="hover:bg-gray-50">
-                {COLUMNS.map((column) => (
-                  <td
-                    key={column.key}
-                    className={`px-4 py-2 ${column.key === "symbol" ? "font-medium" : ""}`}
-                  >
-                    {formatCell(column.key, t)}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {sorted.map((t) => {
+              const change = toNumber(t.day_change);
+              const colorClass =
+                change == null ? "" : change >= 0 ? "text-green-600" : "text-red-600";
+
+              return (
+                <tr key={t.symbol} className="hover:bg-gray-50">
+                  {COLUMNS.map((column) => (
+                    <td
+                      key={column.key}
+                      className={`px-4 py-2 ${column.key === "symbol" ? "font-medium" : ""} ${
+                        column.key === "day_change" ? colorClass : ""
+                      }`}
+                    >
+                      {formatCell(column.key, t)}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
             {sorted.length === 0 && (
               <tr>
                 <td colSpan={COLUMNS.length} className="px-4 py-3 text-gray-500">

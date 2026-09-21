@@ -70,6 +70,7 @@ def fetch_ticker_metrics(symbol):
         "symbol": symbol,
         "company_name": profile_row.get("companyName"),
         "market_cap": profile_row.get("marketCap"),
+        "day_change": profile_row.get("changePercentage"),
         "pe_ratio": ratios_row.get("priceToEarningsRatioTTM"),
         "price_to_sales": ratios_row.get("priceToSalesRatioTTM"),
         "revenue_growth": growth_row.get("growthRevenue"),
