@@ -18,6 +18,31 @@ const COLUMNS = [
 ];
 
 /**
+ * Formats an ISO timestamp (with time) for display, or null when missing.
+ */
+function formatTimestamp(iso) {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+/**
+ * Formats a date-only ISO string ("2026-09-21") for display, or null when missing.
+ * Parsed as UTC noon so the local-timezone conversion can't roll it to the
+ * adjacent day.
+ */
+function formatDateOnly(iso) {
+  if (!iso) return null;
+  const date = new Date(`${iso}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, { dateStyle: "medium" });
+}
+
+/**
  * Coerce a value to a number for sorting. The API is expected to send
  * plain numbers for these fields, but this guards against a string
  * slipping through (e.g. "12.3") without poisoning the sort with NaN.
@@ -119,7 +144,7 @@ export default function IndustryDetail({ industryName, onBack }) {
         ← Back to industries
       </button>
 
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-1">
         <h1 className="text-2xl font-semibold">{industryName}</h1>
 
         <select
@@ -134,6 +159,15 @@ export default function IndustryDetail({ industryName, onBack }) {
           ))}
         </select>
       </div>
+
+      {data?.industry && (data.industry.data_date || data.industry.last_fetched) && (
+        <p className="text-sm text-gray-500 mb-4">
+          Data as of{" "}
+          {data.industry.data_date
+            ? formatDateOnly(data.industry.data_date)
+            : formatTimestamp(data.industry.last_fetched)}
+        </p>
+      )}
 
       {loading && <p className="text-gray-500">Loading...</p>}
 

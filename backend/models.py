@@ -12,6 +12,7 @@ class Industry(db.Model):
     sector = db.Column(db.String(120))
     avg_daily_change = db.Column(db.Float)  # powers the green/red coloring
     last_fetched = db.Column(db.DateTime)   # None until first fetched
+    data_date = db.Column(db.Date)          # the trading day avg_daily_change is actually from
 
     def to_dict(self):
         return {
@@ -20,6 +21,7 @@ class Industry(db.Model):
             "sector": self.sector,
             "avg_daily_change": self.avg_daily_change,
             "last_fetched": self.last_fetched.isoformat() if self.last_fetched else None,
+            "data_date": self.data_date.isoformat() if self.data_date else None,
         }
 
 

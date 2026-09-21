@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()  # must run before anything reads os.environ
@@ -35,7 +36,9 @@ def refresh_industries_if_stale():
         return
 
     names = fmp_client.fetch_industry_list()
-    performance = {row["industry"]: row.get("averageChange") for row in fmp_client.fetch_industry_performance()}
+    perf_rows = fmp_client.fetch_industry_performance()
+    performance = {row["industry"]: row.get("averageChange") for row in perf_rows}
+    market_date = datetime.strptime(perf_rows[0]["date"], "%Y-%m-%d").date() if perf_rows else None
     timestamp = now()
 
     for entry in names:
@@ -44,7 +47,12 @@ def refresh_industries_if_stale():
         if industry is None:
             industry = Industry(name=name)
             db.session.add(industry)
-        industry.avg_daily_change = performance.get(name)
+        if perf_rows:
+            # Only overwrite when we actually got a snapshot back - if FMP
+            # returned nothing, keep the last known change/date rather than
+            # blanking them out.
+            industry.avg_daily_change = performance.get(name)
+            industry.data_date = market_date
         industry.last_fetched = timestamp
 
     db.session.commit()

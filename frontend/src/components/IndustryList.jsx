@@ -8,6 +8,31 @@ const COLUMNS = [
 ];
 
 /**
+ * Formats an ISO timestamp (with time) for display, or null when missing.
+ */
+function formatTimestamp(iso) {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+/**
+ * Formats a date-only ISO string ("2026-09-21") for display, or null when missing.
+ * Parsed as UTC noon so the local-timezone conversion can't roll it to the
+ * adjacent day.
+ */
+function formatDateOnly(iso) {
+  if (!iso) return null;
+  const date = new Date(`${iso}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, { dateStyle: "medium" });
+}
+
+/**
  * Coerce a value to a number for sorting and display.
  * The API may hand back a plain number, or a string like "+1.23%" / "-0.45%".
  * A raw `a - b` on the string form yields NaN, which makes the comparator
@@ -58,6 +83,18 @@ export default function IndustryList({ onSelectIndustry }) {
     }
   }
 
+  // Prefer the actual market date the change figures are from. Fall back to
+  // the fetch timestamp only for rows from before data_date existed, or if
+  // FMP couldn't be reached for a real snapshot yet.
+  const dataAsOf = useMemo(() => {
+    const dataDates = industries.map((i) => i.data_date).filter(Boolean).sort();
+    if (dataDates.length > 0) {
+      return formatDateOnly(dataDates[dataDates.length - 1]);
+    }
+    const timestamps = industries.map((i) => i.last_fetched).filter(Boolean).sort();
+    return formatTimestamp(timestamps[timestamps.length - 1]);
+  }, [industries]);
+
   const sorted = useMemo(() => {
     const column = COLUMNS.find((c) => c.key === sortKey);
     const multiplier = sortDir === "asc" ? 1 : -1;
@@ -82,7 +119,10 @@ export default function IndustryList({ onSelectIndustry }) {
 
   return (
     <div className="max-w-2xl mx-auto p-6">
-      <h1 className="text-2xl font-semibold mb-4">Industries</h1>
+      <h1 className="text-2xl font-semibold mb-1">Industries</h1>
+      {dataAsOf && (
+        <p className="text-sm text-gray-500 mb-4">Data as of {dataAsOf}</p>
+      )}
 
       <input
         type="text"

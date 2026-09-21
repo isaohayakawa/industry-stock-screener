@@ -4,7 +4,7 @@ Keeps all raw HTTP calls in one place so the rest of the app never
 has to think about endpoints, params, or the API key directly.
 """
 import os
-from datetime import date
+from datetime import date, timedelta
 import requests
 
 BASE_URL = "https://financialmodelingprep.com/stable"
@@ -39,10 +39,19 @@ def fetch_industry_list():
 
 
 def fetch_industry_performance():
-    """Returns average daily change per industry (for the green/red coloring).
-    This endpoint requires a date param; we always ask for today's date."""
-    today = date.today().isoformat()  # e.g. "2026-08-29"
-    return _get("industry-performance-snapshot", params={"date": today})
+    """Returns average daily change per industry (for the green/red coloring),
+    each row tagged with the market date it's actually from.
+    This endpoint doesn't fall back to the last trading day on its own - it
+    returns [] for a date with no session (weekends, holidays) instead of the
+    prior close - so we walk backward from today until we land on one that
+    has data."""
+    day = date.today()
+    for _ in range(10):  # bail out rather than loop forever if FMP is down
+        rows = _get("industry-performance-snapshot", params={"date": day.isoformat()})
+        if rows:
+            return rows
+        day -= timedelta(days=1)
+    return []
 
 
 def fetch_tickers_for_industry(industry_name, min_market_cap=None, limit=50):
