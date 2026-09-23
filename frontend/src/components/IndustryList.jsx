@@ -50,14 +50,61 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/**
+ * Small ranked table used for the top-5 gainers/losers summaries.
+ */
+function SummaryTable({ title, rows, onSelectIndustry }) {
+  return (
+    <div>
+      <h2 className="text-sm font-semibold text-gray-700 mb-2">{title}</h2>
+      <table className="w-full border border-gray-200 rounded-md overflow-hidden">
+        <tbody className="divide-y divide-gray-200">
+          {rows.map((industry) => (
+            <tr
+              key={industry.id}
+              onClick={() => onSelectIndustry(industry.name)}
+              className="cursor-pointer hover:bg-gray-50"
+            >
+              <td className="px-4 py-2 font-medium text-gray-900">{industry.name}</td>
+              <td
+                className={`px-4 py-2 text-right ${
+                  industry._change >= 0 ? "text-green-600" : "text-red-600"
+                }`}
+              >
+                {industry._change.toFixed(2)}%
+              </td>
+            </tr>
+          ))}
+
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={2} className="px-4 py-2 text-gray-500">
+                No data available.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function IndustryList({ onSelectIndustry }) {
   const [industries, setIndustries] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // Full, unfiltered industry list - used for the top gainers/losers
+  // summary so it stays stable while the user is searching the table below.
+  const [allIndustries, setAllIndustries] = useState([]);
+
   // Sort state: which column, and which direction.
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
+
+  useEffect(() => {
+    getIndustries().then(setAllIndustries);
+  }, []);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -87,13 +134,25 @@ export default function IndustryList({ onSelectIndustry }) {
   // the fetch timestamp only for rows from before data_date existed, or if
   // FMP couldn't be reached for a real snapshot yet.
   const dataAsOf = useMemo(() => {
-    const dataDates = industries.map((i) => i.data_date).filter(Boolean).sort();
+    const dataDates = allIndustries.map((i) => i.data_date).filter(Boolean).sort();
     if (dataDates.length > 0) {
       return formatDateOnly(dataDates[dataDates.length - 1]);
     }
-    const timestamps = industries.map((i) => i.last_fetched).filter(Boolean).sort();
+    const timestamps = allIndustries.map((i) => i.last_fetched).filter(Boolean).sort();
     return formatTimestamp(timestamps[timestamps.length - 1]);
-  }, [industries]);
+  }, [allIndustries]);
+
+  // Top 5 gainers/losers by average daily change, computed from the full
+  // (unfiltered) list so the summary doesn't change while searching.
+  const { topGainers, topLosers } = useMemo(() => {
+    const ranked = allIndustries
+      .map((i) => ({ ...i, _change: toNumber(i.avg_daily_change) }))
+      .filter((i) => i._change != null);
+
+    const gainers = [...ranked].sort((a, b) => b._change - a._change).slice(0, 5);
+    const losers = [...ranked].sort((a, b) => a._change - b._change).slice(0, 5);
+    return { topGainers: gainers, topLosers: losers };
+  }, [allIndustries]);
 
   const sorted = useMemo(() => {
     const column = COLUMNS.find((c) => c.key === sortKey);
@@ -123,6 +182,19 @@ export default function IndustryList({ onSelectIndustry }) {
       {dataAsOf && (
         <p className="text-sm text-gray-500 mb-4">Data as of {dataAsOf}</p>
       )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        <SummaryTable
+          title="Top 5 Gainers"
+          rows={topGainers}
+          onSelectIndustry={onSelectIndustry}
+        />
+        <SummaryTable
+          title="Top 5 Losers"
+          rows={topLosers}
+          onSelectIndustry={onSelectIndustry}
+        />
+      </div>
 
       <input
         type="text"
