@@ -1,11 +1,39 @@
 import { useEffect, useMemo, useState } from "react";
 import { getIndustryDetail } from "../api";
 
+// `drivers` are the columns each preset's score is computed from (see
+// score_ticker in backend/app.py), so the table can highlight them.
 const PRESETS = [
-  { value: "balanced", label: "Balanced" },
-  { value: "valuation", label: "Valuation-weighted" },
-  { value: "growth", label: "Growth-weighted" },
+  {
+    value: "balanced",
+    label: "Balanced",
+    description: "a 50/50 blend of low P/E + P/S and high revenue growth",
+    drivers: ["pe_ratio", "price_to_sales", "revenue_growth"],
+  },
+  {
+    value: "valuation",
+    label: "Valuation-weighted",
+    description: "lower P/E and P/S rank higher",
+    drivers: ["pe_ratio", "price_to_sales"],
+  },
+  {
+    value: "growth",
+    label: "Growth-weighted",
+    description: "higher revenue growth ranks higher",
+    drivers: ["revenue_growth"],
+  },
 ];
+
+// Columns that feed any preset. These always reserve room for the star
+// (hidden when not in use) so column widths don't shift between modes.
+const STAR_COLUMNS = new Set(PRESETS.flatMap((p) => p.drivers));
+
+// Not a backend preset: the user orders rows by clicking column headers.
+const CUSTOM = "custom";
+
+// Custom mode opens on a concrete sort rather than the API's order, so the
+// table always says how it's ordered.
+const DEFAULT_CUSTOM_SORT = { key: "market_cap", dir: "desc" };
 
 const COLUMNS = [
   { key: "symbol", label: "Symbol", numeric: false },
@@ -84,28 +112,40 @@ export default function IndustryDetail({ industryName, onBack }) {
   const [ranking, setRanking] = useState("balanced");
   const [loading, setLoading] = useState(true);
 
-  // Column sorting is separate from the backend ranking preset: the preset
-  // decides the order the API hands back, sorting a column just re-orders
-  // whatever's currently on screen.
-  const [sortKey, setSortKey] = useState(null);
-  const [sortDir, setSortDir] = useState("asc");
+  // With a preset selected the rows stay in the order the API ranked them.
+  // Clicking a column header switches to Custom and sorts client-side.
+  const [sortKey, setSortKey] = useState(DEFAULT_CUSTOM_SORT.key);
+  const [sortDir, setSortDir] = useState(DEFAULT_CUSTOM_SORT.dir);
+
+  const isCustom = ranking === CUSTOM;
+  const preset = PRESETS.find((p) => p.value === ranking);
+
+  // The preset the current data was fetched with. Custom re-sorts
+  // client-side, so switching to it keeps this instead of refetching.
+  const [fetchRanking, setFetchRanking] = useState(ranking);
 
   useEffect(() => {
     setLoading(true);
-    getIndustryDetail(industryName, ranking)
+    getIndustryDetail(industryName, fetchRanking)
       .then(setData)
       .finally(() => setLoading(false));
-  }, [industryName, ranking]);
+  }, [industryName, fetchRanking]);
 
-  // Switching industry or ranking preset drops any manual column sort, so
-  // the freshly-fetched ranking order is what's shown until the user
-  // clicks a header again.
-  useEffect(() => {
-    setSortKey(null);
-  }, [industryName, ranking]);
+  function handleRankingChange(value) {
+    if (value === CUSTOM) {
+      setSortKey(DEFAULT_CUSTOM_SORT.key);
+      setSortDir(DEFAULT_CUSTOM_SORT.dir);
+    } else {
+      setFetchRanking(value);
+    }
+    setRanking(value);
+  }
 
   function handleSort(key) {
-    if (key === sortKey) {
+    setRanking(CUSTOM);
+    // Only toggle direction when re-clicking the column already sorted in
+    // Custom mode; coming from a preset always starts a fresh sort.
+    if (isCustom && key === sortKey) {
       setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
     } else {
       const column = COLUMNS.find((c) => c.key === key);
@@ -119,7 +159,7 @@ export default function IndustryDetail({ industryName, onBack }) {
   const rows = data?.tickers ?? [];
 
   const sorted = useMemo(() => {
-    if (!sortKey) return rows; // no manual sort yet - keep the API's ranking order
+    if (!isCustom) return rows; // preset selected - keep the API's ranking order
 
     const column = COLUMNS.find((c) => c.key === sortKey);
     const multiplier = sortDir === "asc" ? 1 : -1;
@@ -136,7 +176,7 @@ export default function IndustryDetail({ industryName, onBack }) {
       if (column?.numeric) return (aVal - bVal) * multiplier;
       return String(aVal).localeCompare(String(bVal)) * multiplier;
     });
-  }, [rows, sortKey, sortDir]);
+  }, [rows, isCustom, sortKey, sortDir]);
 
   return (
     <div className="max-w-3xl mx-auto p-6">
@@ -149,7 +189,7 @@ export default function IndustryDetail({ industryName, onBack }) {
 
         <select
           value={ranking}
-          onChange={(e) => setRanking(e.target.value)}
+          onChange={(e) => handleRankingChange(e.target.value)}
           className="border border-gray-300 rounded-md px-3 py-2"
         >
           {PRESETS.map((p) => (
@@ -157,6 +197,7 @@ export default function IndustryDetail({ industryName, onBack }) {
               {p.label}
             </option>
           ))}
+          <option value={CUSTOM}>Custom (sort by column)</option>
         </select>
       </div>
 
@@ -172,20 +213,69 @@ export default function IndustryDetail({ industryName, onBack }) {
       {loading && <p className="text-gray-500">Loading...</p>}
 
       {!loading && data && (
+        <p className="text-sm text-gray-600 mb-2">
+          {isCustom ? (
+            <>
+              Sorted by{" "}
+              <span className="font-medium">
+                {COLUMNS.find((c) => c.key === sortKey)?.label}{" "}
+                {sortDir === "asc" ? "\u25B2" : "\u25BC"}
+              </span>
+              .{" "}
+              <span className="text-gray-400">Click a column header to change the order.</span>
+            </>
+          ) : (
+            <>
+              Ranked by <span className="font-medium">{preset.label}</span>:{" "}
+              {preset.description}.{" "}
+              <span className="text-gray-400">
+                {"\u2605"} marks the columns used for ranking. Click any column header to sort by
+                it instead.
+              </span>
+            </>
+          )}
+        </p>
+      )}
+
+      {!loading && data && (
         <table className="w-full border border-gray-200 rounded-md overflow-hidden">
           <thead className="bg-gray-100 text-sm">
             <tr>
+              {/* Always rendered so column widths stay put when switching modes;
+                  in Custom mode the content is hidden but still takes up space. */}
+              <th
+                title={isCustom ? undefined : `${preset.label} rank`}
+                className="px-4 py-2 text-left"
+              >
+                <span className={isCustom ? "invisible" : ""}>#</span>
+              </th>
               {COLUMNS.map((column) => {
-                const isActive = sortKey === column.key;
+                const isActive = isCustom && sortKey === column.key;
+                const isDriver = !isCustom && preset.drivers.includes(column.key);
+
+                const className = `px-4 py-2 text-left cursor-pointer select-none ${
+                  isDriver ? "bg-blue-50 text-blue-800 hover:bg-blue-100" : "hover:bg-gray-200"
+                }`;
+
                 return (
                   <th
                     key={column.key}
                     onClick={() => handleSort(column.key)}
                     aria-sort={
-                      isActive ? (sortDir === "asc" ? "ascending" : "descending") : "none"
+                      isActive ? (sortDir === "asc" ? "ascending" : "descending") : undefined
                     }
-                    className="px-4 py-2 text-left cursor-pointer select-none hover:bg-gray-200"
+                    title={
+                      isDriver
+                        ? `Used in ${preset.label} ranking. Click to sort by this column instead.`
+                        : undefined
+                    }
+                    className={className}
                   >
+                    {STAR_COLUMNS.has(column.key) && (
+                      <span className={`mr-1 ${isDriver ? "" : "invisible"}`} aria-hidden="true">
+                        {"\u2605"}
+                      </span>
+                    )}
                     {column.label}
                     <span className="ml-1 text-gray-400">
                       {isActive ? (sortDir === "asc" ? "\u25B2" : "\u25BC") : "\u21C5"}
@@ -196,13 +286,16 @@ export default function IndustryDetail({ industryName, onBack }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {sorted.map((t) => {
+            {sorted.map((t, index) => {
               const change = toNumber(t.day_change);
               const colorClass =
                 change == null ? "" : change >= 0 ? "text-green-600" : "text-red-600";
 
               return (
                 <tr key={t.symbol} className="hover:bg-gray-50">
+                  <td className="px-4 py-2 text-gray-500">
+                    <span className={isCustom ? "invisible" : ""}>{index + 1}</span>
+                  </td>
                   {COLUMNS.map((column) => (
                     <td
                       key={column.key}
@@ -218,7 +311,7 @@ export default function IndustryDetail({ industryName, onBack }) {
             })}
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={COLUMNS.length} className="px-4 py-3 text-gray-500">
+                <td colSpan={COLUMNS.length + 1} className="px-4 py-3 text-gray-500">
                   No tickers found for this industry.
                 </td>
               </tr>
