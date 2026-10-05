@@ -6,6 +6,7 @@ load_dotenv()  # must run before anything reads os.environ
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 
 from models import db, Industry, IndustryTicker, Ticker
 import fmp_client
@@ -175,7 +176,10 @@ def handle_unexpected_error(err):
     import traceback
     traceback.print_exc()  # full traceback in your terminal for debugging
 
-    status_code = getattr(err, "code", 500)
+    # Only werkzeug HTTPExceptions carry an HTTP status in .code - other
+    # libraries reuse that name (SQLAlchemy errors have code="e3q8"), and
+    # passing a non-integer status breaks the response entirely.
+    status_code = err.code if isinstance(err, HTTPException) else 500
     return jsonify({"error": str(err)}), status_code
 
 
