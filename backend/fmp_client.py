@@ -41,13 +41,15 @@ def fetch_industry_list():
 def fetch_industry_performance():
     """Returns average daily change per industry (for the green/red coloring),
     each row tagged with the market date it's actually from.
-    This endpoint doesn't fall back to the last trading day on its own - it
-    returns [] for a date with no session (weekends, holidays) instead of the
-    prior close - so we walk backward from today until we land on one that
-    has data."""
+    This endpoint doesn't reliably fall back to the last trading day - it
+    returns [] for weekends/holidays, and for a day whose session hasn't
+    happened yet it returns a mix of leftover rows from several earlier days.
+    So we only accept rows actually dated the day we asked for, walking
+    backward from today until we land on a day that has them."""
     day = date.today()
     for _ in range(10):  # bail out rather than loop forever if FMP is down
         rows = _get("industry-performance-snapshot", params={"date": day.isoformat()})
+        rows = [row for row in rows if row.get("date") == day.isoformat()]
         if rows:
             return rows
         day -= timedelta(days=1)
