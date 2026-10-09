@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { getIndustries } from "../api";
+import { getIndustries, getIndustriesSummary } from "../api";
 import RefreshButton from "./RefreshButton";
+import AiSummary from "./AiSummary";
 
 const COLUMNS = [
   { key: "name", label: "Industry", numeric: false },
@@ -203,6 +204,12 @@ export default function IndustryList({ onSelectIndustry }) {
         <RefreshButton onClick={handleRefresh} refreshing={refreshing} />
         {refreshError && <span className="text-red-600">{refreshError}</span>}
       </div>
+
+      {/* Waits for the full list, and refetches when a refresh replaces it. */}
+      <AiSummary
+        load={getIndustriesSummary}
+        trigger={allIndustries.length > 0 ? allIndustries : null}
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <SummaryTable
