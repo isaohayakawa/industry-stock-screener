@@ -28,12 +28,13 @@ with app.app_context():
 
 # ---------------------------------------------------------------------------
 # Refresh helpers — each checks staleness and only calls FMP when needed.
+# Pass force=True to skip the staleness check (user-triggered refresh).
 # ---------------------------------------------------------------------------
 
-def refresh_industries_if_stale():
+def refresh_industries_if_stale(force=False):
     """Ensures the industries table is populated and not stale."""
     any_row = Industry.query.first()
-    if any_row and not is_stale(any_row.last_fetched):
+    if not force and any_row and not is_stale(any_row.last_fetched):
         return
 
     names = fmp_client.fetch_industry_list()
@@ -59,37 +60,41 @@ def refresh_industries_if_stale():
     db.session.commit()
 
 
-def refresh_industry_tickers_if_stale(industry):
+def refresh_industry_tickers_if_stale(industry, force=False):
     """Ensures the ticker list for one industry is populated and not stale."""
     existing_link = IndustryTicker.query.filter_by(industry_id=industry.id).first()
-    if existing_link and not is_stale(existing_link.last_fetched):
+    if not force and existing_link and not is_stale(existing_link.last_fetched):
         return
 
     results = fmp_client.fetch_tickers_for_industry(industry.name)
+    symbols = list(dict.fromkeys(row["symbol"] for row in results if row.get("symbol")))
+
+    # Make every FMP call before writing anything. SQLite allows one writer
+    # at a time, so holding a write transaction open across these (slow)
+    # network calls makes any concurrent write fail with "database is locked".
+    metrics = {}
+    for symbol in symbols:
+        ticker = Ticker.query.filter_by(symbol=symbol).first()
+        if force or ticker is None or is_stale(ticker.last_fetched):
+            metrics[symbol] = fmp_client.fetch_ticker_metrics(symbol)
+
     timestamp = now()
 
     # Clear old mappings for this industry, then re-insert current ones.
     IndustryTicker.query.filter_by(industry_id=industry.id).delete()
 
-    for row in results:
-        symbol = row.get("symbol")
-        if not symbol:
-            continue
+    for symbol in symbols:
         db.session.add(IndustryTicker(industry_id=industry.id, ticker=symbol, last_fetched=timestamp))
-        refresh_ticker_metrics_if_stale(symbol)
+
+    for symbol, data in metrics.items():
+        save_ticker_metrics(symbol, data, timestamp)
 
     db.session.commit()
 
 
-def refresh_ticker_metrics_if_stale(symbol):
-    """Ensures one ticker's metrics are populated and not stale."""
+def save_ticker_metrics(symbol, data, timestamp):
+    """Writes fetched metrics onto a ticker row. Caller commits."""
     ticker = Ticker.query.filter_by(symbol=symbol).first()
-    if ticker and not is_stale(ticker.last_fetched):
-        return
-
-    data = fmp_client.fetch_ticker_metrics(symbol)
-    timestamp = now()
-
     if ticker is None:
         ticker = Ticker(symbol=symbol)
         db.session.add(ticker)
@@ -99,10 +104,11 @@ def refresh_ticker_metrics_if_stale(symbol):
     ticker.price_to_sales = data.get("price_to_sales")
     ticker.revenue_growth = data.get("revenue_growth")
     ticker.market_cap = data.get("market_cap")
+    ticker.price = data.get("price")
     ticker.day_change = data.get("day_change")
+    ticker.year_low = data.get("year_low")
+    ticker.year_high = data.get("year_high")
     ticker.last_fetched = timestamp
-
-    db.session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -134,8 +140,9 @@ def score_ticker(ticker, preset):
 @app.route("/api/industries")
 def get_industries():
     search = request.args.get("search", "").strip().lower()
+    force = request.args.get("refresh") == "1"  # bypass the cache
 
-    refresh_industries_if_stale()
+    refresh_industries_if_stale(force=force)
 
     query = Industry.query
     if search:
@@ -148,12 +155,13 @@ def get_industries():
 @app.route("/api/industries/<path:industry_name>")
 def get_industry_detail(industry_name):
     preset = request.args.get("ranking", "balanced")  # valuation | growth | balanced
+    force = request.args.get("refresh") == "1"  # bypass the cache
 
     industry = Industry.query.filter_by(name=industry_name).first()
     if industry is None:
         return jsonify({"error": "Industry not found"}), 404
 
-    refresh_industry_tickers_if_stale(industry)
+    refresh_industry_tickers_if_stale(industry, force=force)
 
     links = IndustryTicker.query.filter_by(industry_id=industry.id).all()
     symbols = [link.ticker for link in links]

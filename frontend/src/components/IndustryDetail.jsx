@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getIndustryDetail } from "../api";
+import RefreshButton from "./RefreshButton";
+import RangeBar, { rangePosition } from "./RangeBar";
 
 // `drivers` are the columns each preset's score is computed from (see
 // score_ticker in backend/app.py), so the table can highlight them.
@@ -38,7 +40,15 @@ const DEFAULT_CUSTOM_SORT = { key: "market_cap", dir: "desc" };
 const COLUMNS = [
   { key: "symbol", label: "Symbol", numeric: false },
   { key: "company_name", label: "Company", numeric: false },
+  { key: "price", label: "Price", numeric: true },
   { key: "day_change", label: "Day Change", numeric: true },
+  // Sorts by where the price sits in the range (near the high first).
+  {
+    key: "year_range",
+    label: "52W Range",
+    numeric: true,
+    sortValue: (t) => rangePosition(t.year_low, t.year_high, t.price),
+  },
   { key: "pe_ratio", label: "P/E", numeric: true },
   { key: "price_to_sales", label: "P/S", numeric: true },
   { key: "revenue_growth", label: "Rev Growth", numeric: true },
@@ -90,8 +100,12 @@ function formatCell(key, ticker) {
       return ticker.symbol;
     case "company_name":
       return ticker.company_name || "\u2014";
+    case "price":
+      return ticker.price != null ? `$${ticker.price.toFixed(2)}` : "\u2014";
     case "day_change":
       return ticker.day_change != null ? `${ticker.day_change.toFixed(2)}%` : "\u2014";
+    case "year_range":
+      return <RangeBar low={ticker.year_low} high={ticker.year_high} price={ticker.price} />;
     case "pe_ratio":
       return ticker.pe_ratio?.toFixed(2) ?? "\u2014";
     case "price_to_sales":
@@ -131,6 +145,23 @@ export default function IndustryDetail({ industryName, onBack }) {
       .finally(() => setLoading(false));
   }, [industryName, fetchRanking]);
 
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState(null);
+
+  // Keeps the current table on screen while the backend refetches, rather
+  // than flashing back to "Loading...".
+  async function handleRefresh() {
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      setData(await getIndustryDetail(industryName, fetchRanking, { refresh: true }));
+    } catch (err) {
+      setRefreshError(err.message);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   function handleRankingChange(value) {
     if (value === CUSTOM) {
       setSortKey(DEFAULT_CUSTOM_SORT.key);
@@ -164,9 +195,11 @@ export default function IndustryDetail({ industryName, onBack }) {
     const column = COLUMNS.find((c) => c.key === sortKey);
     const multiplier = sortDir === "asc" ? 1 : -1;
 
+    const getValue = column?.sortValue ?? ((t) => t[sortKey]);
+
     return [...rows].sort((a, b) => {
-      const aVal = column?.numeric ? toNumber(a[sortKey]) : a[sortKey];
-      const bVal = column?.numeric ? toNumber(b[sortKey]) : b[sortKey];
+      const aVal = column?.numeric ? toNumber(getValue(a)) : getValue(a);
+      const bVal = column?.numeric ? toNumber(getValue(b)) : getValue(b);
 
       // Nulls always sink to the bottom regardless of direction.
       if (aVal == null && bVal == null) return 0;
@@ -179,7 +212,7 @@ export default function IndustryDetail({ industryName, onBack }) {
   }, [rows, isCustom, sortKey, sortDir]);
 
   return (
-    <div className="max-w-3xl mx-auto p-6">
+    <div className="max-w-6xl mx-auto p-6">
       <button onClick={onBack} className="text-blue-600 hover:underline mb-4">
         ← Back to industries
       </button>
@@ -201,14 +234,18 @@ export default function IndustryDetail({ industryName, onBack }) {
         </select>
       </div>
 
-      {data?.industry && (data.industry.data_date || data.industry.last_fetched) && (
-        <p className="text-sm text-gray-500 mb-4">
-          Data as of{" "}
-          {data.industry.data_date
-            ? formatDateOnly(data.industry.data_date)
-            : formatTimestamp(data.industry.last_fetched)}
-        </p>
-      )}
+      <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
+        {data?.industry && (data.industry.data_date || data.industry.last_fetched) && (
+          <span>
+            Data as of{" "}
+            {data.industry.data_date
+              ? formatDateOnly(data.industry.data_date)
+              : formatTimestamp(data.industry.last_fetched)}
+          </span>
+        )}
+        <RefreshButton onClick={handleRefresh} refreshing={refreshing || loading} />
+        {refreshError && <span className="text-red-600">{refreshError}</span>}
+      </div>
 
       {loading && <p className="text-gray-500">Loading...</p>}
 
@@ -238,86 +275,90 @@ export default function IndustryDetail({ industryName, onBack }) {
       )}
 
       {!loading && data && (
-        <table className="w-full border border-gray-200 rounded-md overflow-hidden">
-          <thead className="bg-gray-100 text-sm">
-            <tr>
-              {/* Always rendered so column widths stay put when switching modes;
-                  in Custom mode the content is hidden but still takes up space. */}
-              <th
-                title={isCustom ? undefined : `${preset.label} rank`}
-                className="px-4 py-2 text-left"
-              >
-                <span className={isCustom ? "invisible" : ""}>#</span>
-              </th>
-              {COLUMNS.map((column) => {
-                const isActive = isCustom && sortKey === column.key;
-                const isDriver = !isCustom && preset.drivers.includes(column.key);
+        <div className="overflow-x-auto">
+          <table className="w-full border border-gray-200 rounded-md overflow-hidden">
+            <thead className="bg-gray-100 text-sm">
+              <tr>
+                {/* Always rendered so column widths stay put when switching modes;
+                    in Custom mode the content is hidden but still takes up space. */}
+                <th
+                  title={isCustom ? undefined : `${preset.label} rank`}
+                  className="px-4 py-2 text-left"
+                >
+                  <span className={isCustom ? "invisible" : ""}>#</span>
+                </th>
+                {COLUMNS.map((column) => {
+                  const isActive = isCustom && sortKey === column.key;
+                  const isDriver = !isCustom && preset.drivers.includes(column.key);
 
-                const className = `px-4 py-2 text-left cursor-pointer select-none ${
-                  isDriver ? "bg-blue-50 text-blue-800 hover:bg-blue-100" : "hover:bg-gray-200"
-                }`;
+                  const className = `px-4 py-2 text-left cursor-pointer select-none ${
+                    isDriver ? "bg-blue-50 text-blue-800 hover:bg-blue-100" : "hover:bg-gray-200"
+                  }`;
+
+                  return (
+                    <th
+                      key={column.key}
+                      onClick={() => handleSort(column.key)}
+                      aria-sort={
+                        isActive ? (sortDir === "asc" ? "ascending" : "descending") : undefined
+                      }
+                      title={
+                        isDriver
+                          ? `Used in ${preset.label} ranking. Click to sort by this column instead.`
+                          : undefined
+                      }
+                      className={className}
+                    >
+                      {STAR_COLUMNS.has(column.key) && (
+                        <span className={`mr-1 ${isDriver ? "" : "invisible"}`} aria-hidden="true">
+                          {"\u2605"}
+                        </span>
+                      )}
+                      {column.label}
+                      <span className="ml-1 text-gray-400">
+                        {isActive ? (sortDir === "asc" ? "\u25B2" : "\u25BC") : "\u21C5"}
+                      </span>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {sorted.map((t, index) => {
+                const change = toNumber(t.day_change);
+                const colorClass =
+                  change == null ? "" : change >= 0 ? "text-green-600" : "text-red-600";
 
                 return (
-                  <th
-                    key={column.key}
-                    onClick={() => handleSort(column.key)}
-                    aria-sort={
-                      isActive ? (sortDir === "asc" ? "ascending" : "descending") : undefined
-                    }
-                    title={
-                      isDriver
-                        ? `Used in ${preset.label} ranking. Click to sort by this column instead.`
-                        : undefined
-                    }
-                    className={className}
-                  >
-                    {STAR_COLUMNS.has(column.key) && (
-                      <span className={`mr-1 ${isDriver ? "" : "invisible"}`} aria-hidden="true">
-                        {"\u2605"}
-                      </span>
-                    )}
-                    {column.label}
-                    <span className="ml-1 text-gray-400">
-                      {isActive ? (sortDir === "asc" ? "\u25B2" : "\u25BC") : "\u21C5"}
-                    </span>
-                  </th>
+                  <tr key={t.symbol} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 text-gray-500">
+                      <span className={isCustom ? "invisible" : ""}>{index + 1}</span>
+                    </td>
+                    {COLUMNS.map((column) => (
+                      <td
+                        key={column.key}
+                        className={`px-4 py-2 ${column.key === "symbol" ? "font-medium" : ""} ${
+                          column.key === "year_range" ? "whitespace-nowrap" : ""
+                        } ${
+                          column.key === "day_change" ? colorClass : ""
+                        }`}
+                      >
+                        {formatCell(column.key, t)}
+                      </td>
+                    ))}
+                  </tr>
                 );
               })}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {sorted.map((t, index) => {
-              const change = toNumber(t.day_change);
-              const colorClass =
-                change == null ? "" : change >= 0 ? "text-green-600" : "text-red-600";
-
-              return (
-                <tr key={t.symbol} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 text-gray-500">
-                    <span className={isCustom ? "invisible" : ""}>{index + 1}</span>
+              {sorted.length === 0 && (
+                <tr>
+                  <td colSpan={COLUMNS.length + 1} className="px-4 py-3 text-gray-500">
+                    No tickers found for this industry.
                   </td>
-                  {COLUMNS.map((column) => (
-                    <td
-                      key={column.key}
-                      className={`px-4 py-2 ${column.key === "symbol" ? "font-medium" : ""} ${
-                        column.key === "day_change" ? colorClass : ""
-                      }`}
-                    >
-                      {formatCell(column.key, t)}
-                    </td>
-                  ))}
                 </tr>
-              );
-            })}
-            {sorted.length === 0 && (
-              <tr>
-                <td colSpan={COLUMNS.length + 1} className="px-4 py-3 text-gray-500">
-                  No tickers found for this industry.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
