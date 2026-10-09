@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { getIndustries } from "../api";
+import RefreshButton from "./RefreshButton";
 
 const COLUMNS = [
   { key: "name", label: "Industry", numeric: false },
@@ -102,9 +103,27 @@ export default function IndustryList({ onSelectIndustry }) {
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
 
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState(null);
+
   useEffect(() => {
     getIndustries().then(setAllIndustries);
   }, []);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      // Force the backend to refetch, then reload the (now fresh) search
+      // results from its cache so both lists stay in sync.
+      setAllIndustries(await getIndustries("", { refresh: true }));
+      setIndustries(await getIndustries(search));
+    } catch (err) {
+      setRefreshError(err.message);
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -179,9 +198,11 @@ export default function IndustryList({ onSelectIndustry }) {
   return (
     <div className="max-w-2xl mx-auto p-6">
       <h1 className="text-2xl font-semibold mb-1">Industries</h1>
-      {dataAsOf && (
-        <p className="text-sm text-gray-500 mb-4">Data as of {dataAsOf}</p>
-      )}
+      <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
+        {dataAsOf && <span>Data as of {dataAsOf}</span>}
+        <RefreshButton onClick={handleRefresh} refreshing={refreshing} />
+        {refreshError && <span className="text-red-600">{refreshError}</span>}
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <SummaryTable

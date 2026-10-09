@@ -64,6 +64,17 @@ def fetch_tickers_for_industry(industry_name, min_market_cap=None, limit=50):
     return _get("company-screener", params=params)
 
 
+def _parse_range(value):
+    """Splits profile's 52-week "range" string ("243.42-345.34") into
+    (low, high) floats, or (None, None) if it's missing or malformed.
+    Sorted because FMP occasionally sends the bounds reversed (e.g. NVL)."""
+    try:
+        low, high = sorted(float(part) for part in str(value).split("-"))
+        return low, high
+    except (TypeError, ValueError):
+        return None, None
+
+
 def fetch_ticker_metrics(symbol):
     """Pulls valuation, profitability, and growth metrics for a single ticker.
     P/E and P/S live in ratios-ttm, not key-metrics-ttm (that endpoint only
@@ -76,13 +87,17 @@ def fetch_ticker_metrics(symbol):
     profile_row = profile[0] if profile else {}
     ratios_row = ratios[0] if ratios else {}
     growth_row = growth[0] if growth else {}
+    year_low, year_high = _parse_range(profile_row.get("range"))
 
     return {
         "symbol": symbol,
         "company_name": profile_row.get("companyName"),
         "market_cap": profile_row.get("marketCap"),
+        "price": profile_row.get("price"),
         "day_change": profile_row.get("changePercentage"),
         "pe_ratio": ratios_row.get("priceToEarningsRatioTTM"),
         "price_to_sales": ratios_row.get("priceToSalesRatioTTM"),
         "revenue_growth": growth_row.get("growthRevenue"),
+        "year_low": year_low,
+        "year_high": year_high,
     }
