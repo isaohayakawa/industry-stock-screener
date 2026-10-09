@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { getIndustryDetail } from "../api";
+import { getIndustryDetail, getIndustryDetailSummary } from "../api";
 import RefreshButton from "./RefreshButton";
+import AiSummary from "./AiSummary";
 import RangeBar, { rangePosition } from "./RangeBar";
 
 // `drivers` are the columns each preset's score is computed from (see
@@ -189,6 +190,14 @@ export default function IndustryDetail({ industryName, onBack }) {
 
   const rows = data?.tickers ?? [];
 
+  // The summary doesn't depend on the ranking, so key it on the tickers'
+  // fetch times: it reloads after a refresh but not on a ranking change.
+  const summaryTrigger = useMemo(() => {
+    if (!data) return null;
+    const fetched = rows.map((t) => t.last_fetched).filter(Boolean).sort();
+    return `${industryName}|${fetched[fetched.length - 1] ?? ""}`;
+  }, [data, rows, industryName]);
+
   const sorted = useMemo(() => {
     if (!isCustom) return rows; // preset selected - keep the API's ranking order
 
@@ -246,6 +255,11 @@ export default function IndustryDetail({ industryName, onBack }) {
         <RefreshButton onClick={handleRefresh} refreshing={refreshing || loading} />
         {refreshError && <span className="text-red-600">{refreshError}</span>}
       </div>
+
+      <AiSummary
+        load={(opts) => getIndustryDetailSummary(industryName, opts)}
+        trigger={summaryTrigger}
+      />
 
       {loading && <p className="text-gray-500">Loading...</p>}
 

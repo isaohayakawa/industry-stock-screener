@@ -4,12 +4,14 @@ from dotenv import load_dotenv
 
 load_dotenv()  # must run before anything reads os.environ
 
+import anthropic
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
 from models import db, Industry, IndustryTicker, Ticker
 import fmp_client
+import ai_summary
 from cache import is_stale, now
 
 app = Flask(__name__)
@@ -174,6 +176,53 @@ def get_industry_detail(industry_name):
         "ranking": preset,
         "tickers": [t.to_dict() for t in ranked],
     })
+
+
+# ---------------------------------------------------------------------------
+# AI summaries - separate from the data routes so the screen never waits on
+# them. They read only what's already cached; the frontend calls them after
+# its data has loaded.
+# ---------------------------------------------------------------------------
+
+def summary_response(screen, data):
+    if not ai_summary.is_enabled():
+        return jsonify({"enabled": False, "summary": None})
+
+    try:
+        summary = ai_summary.summarize(screen, data)
+    except anthropic.AuthenticationError:
+        return jsonify({"enabled": True, "error": "ANTHROPIC_API_KEY was rejected"}), 502
+    except anthropic.RateLimitError:
+        return jsonify({"enabled": True, "error": "AI summary rate limited, try again shortly"}), 503
+    except anthropic.APIError as err:
+        app.logger.warning("AI summary failed: %s", err)
+        return jsonify({"enabled": True, "error": "AI summary unavailable"}), 502
+
+    return jsonify({"enabled": True, "summary": summary})
+
+
+@app.route("/api/summary/industries")
+def get_industries_summary():
+    industries = Industry.query.all()
+    if not industries:
+        return jsonify({"enabled": ai_summary.is_enabled(), "summary": None})
+    return summary_response("industry_list", ai_summary.industries_screen_data(industries))
+
+
+@app.route("/api/summary/industries/<path:industry_name>")
+def get_industry_detail_summary(industry_name):
+    industry = Industry.query.filter_by(name=industry_name).first()
+    if industry is None:
+        return jsonify({"error": "Industry not found"}), 404
+
+    links = IndustryTicker.query.filter_by(industry_id=industry.id).all()
+    tickers = Ticker.query.filter(Ticker.symbol.in_([link.ticker for link in links])).all()
+    if not tickers:
+        return jsonify({"enabled": ai_summary.is_enabled(), "summary": None})
+
+    return summary_response(
+        "industry_detail", ai_summary.industry_detail_screen_data(industry, tickers)
+    )
 
 
 @app.errorhandler(Exception)
