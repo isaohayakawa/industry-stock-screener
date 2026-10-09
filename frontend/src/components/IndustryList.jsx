@@ -198,7 +198,7 @@ export default function IndustryList({ onSelectIndustry }) {
 
   return (
     <div className="max-w-2xl mx-auto p-6">
-      <h1 className="text-2xl font-semibold mb-1">Industries</h1>
+      <h1 className="text-2xl font-semibold mb-1">Industry Stock Screener</h1>
       <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
         {dataAsOf && <span>Data as of {dataAsOf}</span>}
         <RefreshButton onClick={handleRefresh} refreshing={refreshing} />
