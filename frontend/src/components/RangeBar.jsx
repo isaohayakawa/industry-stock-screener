@@ -1,3 +1,5 @@
+import { formatCurrency, formatNumber } from "../format";
+
 /**
  * Where `price` sits between `low` and `high`, as 0-100, or null when it
  * can't be placed. Clamped because a cached price can drift slightly
@@ -21,13 +23,13 @@ export default function RangeBar({ low, high, price }) {
   const position = rangePosition(low, high, price);
   const title =
     position != null
-      ? `52W low $${low.toFixed(2)} · price $${price.toFixed(2)} (${position.toFixed(0)}% of range) · 52W high $${high.toFixed(2)}`
-      : `52W low $${low.toFixed(2)} · 52W high $${high.toFixed(2)}`;
+      ? `52W low ${formatCurrency(low)} · price ${formatCurrency(price)} (${position.toFixed(0)}% of range) · 52W high ${formatCurrency(high)}`
+      : `52W low ${formatCurrency(low)} · 52W high ${formatCurrency(high)}`;
 
   return (
     <div className="flex items-center gap-2 text-xs text-gray-500 tabular-nums" title={title}>
       {/* Fixed-width labels keep the tracks lined up from row to row. */}
-      <span className="w-14 text-right">{low.toFixed(2)}</span>
+      <span className="w-16 text-right">{formatNumber(low)}</span>
       <div className="relative shrink-0 w-24 h-1.5 rounded-full bg-blue-100" aria-hidden="true">
         {position != null && (
           <>
@@ -42,7 +44,7 @@ export default function RangeBar({ low, high, price }) {
           </>
         )}
       </div>
-      <span className="w-14">{high.toFixed(2)}</span>
+      <span className="w-16">{formatNumber(high)}</span>
       <span className="sr-only">{title}</span>
     </div>
   );

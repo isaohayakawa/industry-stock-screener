@@ -3,6 +3,7 @@ import { getIndustryDetail, getIndustryDetailSummary } from "../api";
 import RefreshButton from "./RefreshButton";
 import AiSummary from "./AiSummary";
 import RangeBar, { rangePosition } from "./RangeBar";
+import { formatCurrency, formatMarketCap, formatNumber, formatPercent } from "../format";
 
 // `drivers` are the columns each preset's score is computed from (see
 // score_ticker in backend/app.py), so the table can highlight them.
@@ -41,8 +42,8 @@ const DEFAULT_CUSTOM_SORT = { key: "market_cap", dir: "desc" };
 const COLUMNS = [
   { key: "symbol", label: "Symbol", numeric: false },
   { key: "company_name", label: "Company", numeric: false },
-  { key: "price", label: "Price", numeric: true },
-  { key: "day_change", label: "Day Change", numeric: true },
+  { key: "price", label: "Price", numeric: true, align: "right" },
+  { key: "day_change", label: "Day Change", numeric: true, align: "right" },
   // Sorts by where the price sits in the range (near the high first).
   {
     key: "year_range",
@@ -50,10 +51,10 @@ const COLUMNS = [
     numeric: true,
     sortValue: (t) => rangePosition(t.year_low, t.year_high, t.price),
   },
-  { key: "pe_ratio", label: "P/E", numeric: true },
-  { key: "price_to_sales", label: "P/S", numeric: true },
-  { key: "revenue_growth", label: "Rev Growth", numeric: true },
-  { key: "market_cap", label: "Market Cap", numeric: true },
+  { key: "pe_ratio", label: "P/E", numeric: true, align: "right" },
+  { key: "price_to_sales", label: "P/S", numeric: true, align: "right" },
+  { key: "revenue_growth", label: "Rev Growth", numeric: true, align: "right" },
+  { key: "market_cap", label: "Market Cap", numeric: true, align: "right" },
 ];
 
 /**
@@ -102,21 +103,24 @@ function formatCell(key, ticker) {
     case "company_name":
       return ticker.company_name || "\u2014";
     case "price":
-      return ticker.price != null ? `$${ticker.price.toFixed(2)}` : "\u2014";
+      return formatCurrency(ticker.price);
     case "day_change":
-      return ticker.day_change != null ? `${ticker.day_change.toFixed(2)}%` : "\u2014";
+      return formatPercent(ticker.day_change, 2, { signed: true });
     case "year_range":
       return <RangeBar low={ticker.year_low} high={ticker.year_high} price={ticker.price} />;
     case "pe_ratio":
-      return ticker.pe_ratio?.toFixed(2) ?? "\u2014";
+      return formatNumber(ticker.pe_ratio);
     case "price_to_sales":
-      return ticker.price_to_sales?.toFixed(2) ?? "\u2014";
+      return formatNumber(ticker.price_to_sales);
     case "revenue_growth":
-      return ticker.revenue_growth != null
-        ? `${(ticker.revenue_growth * 100).toFixed(1)}%`
-        : "\u2014";
+      // API sends a fraction (0.193); display as a percentage.
+      return formatPercent(
+        ticker.revenue_growth != null ? ticker.revenue_growth * 100 : null,
+        1,
+        { signed: true }
+      );
     case "market_cap":
-      return ticker.market_cap ? `$${(ticker.market_cap / 1e9).toFixed(1)}B` : "\u2014";
+      return formatMarketCap(ticker.market_cap);
     default:
       return "\u2014";
   }
@@ -297,7 +301,7 @@ export default function IndustryDetail({ industryName, onBack }) {
                     in Custom mode the content is hidden but still takes up space. */}
                 <th
                   title={isCustom ? undefined : `${preset.label} rank`}
-                  className="px-4 py-2 text-left"
+                  className="px-3 py-2 text-left"
                 >
                   <span className={isCustom ? "invisible" : ""}>#</span>
                 </th>
@@ -305,7 +309,9 @@ export default function IndustryDetail({ industryName, onBack }) {
                   const isActive = isCustom && sortKey === column.key;
                   const isDriver = !isCustom && preset.drivers.includes(column.key);
 
-                  const className = `px-4 py-2 text-left cursor-pointer select-none ${
+                  const className = `px-3 py-2 cursor-pointer select-none ${
+                    column.align === "right" ? "text-right" : "text-left"
+                  } ${
                     isDriver ? "bg-blue-50 text-blue-800 hover:bg-blue-100" : "hover:bg-gray-200"
                   }`;
 
@@ -345,13 +351,15 @@ export default function IndustryDetail({ industryName, onBack }) {
 
                 return (
                   <tr key={t.symbol} className="hover:bg-gray-50">
-                    <td className="px-4 py-2 text-gray-500">
+                    <td className="px-3 py-2 text-gray-500">
                       <span className={isCustom ? "invisible" : ""}>{index + 1}</span>
                     </td>
                     {COLUMNS.map((column) => (
                       <td
                         key={column.key}
-                        className={`px-4 py-2 ${column.key === "symbol" ? "font-medium" : ""} ${
+                        className={`px-3 py-2 ${column.key === "symbol" ? "font-medium" : ""} ${
+                          column.align === "right" ? "text-right tabular-nums whitespace-nowrap" : ""
+                        } ${
                           column.key === "year_range" ? "whitespace-nowrap" : ""
                         } ${
                           column.key === "day_change" ? colorClass : ""
