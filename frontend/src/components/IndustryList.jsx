@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getIndustries, getIndustriesSummary } from "../api";
 import RefreshButton from "./RefreshButton";
 import AiSummary from "./AiSummary";
+import { formatPercent } from "../format";
 
 const COLUMNS = [
   { key: "name", label: "Industry", numeric: false },
@@ -69,11 +70,11 @@ function SummaryTable({ title, rows, onSelectIndustry }) {
             >
               <td className="px-4 py-2 font-medium text-gray-900">{industry.name}</td>
               <td
-                className={`px-4 py-2 text-right ${
+                className={`px-4 py-2 text-right tabular-nums ${
                   industry._change >= 0 ? "text-green-600" : "text-red-600"
                 }`}
               >
-                {industry._change.toFixed(2)}%
+                {formatPercent(industry._change, 2, { signed: true })}
               </td>
             </tr>
           ))}
@@ -280,8 +281,8 @@ export default function IndustryList({ onSelectIndustry }) {
               >
                 <td className={`px-4 py-3 font-medium ${colorClass}`}>{industry.name}</td>
                 <td className="px-4 py-3 text-gray-600">{industry.sector || "\u2014"}</td>
-                <td className={`px-4 py-3 text-right ${colorClass}`}>
-                  {change != null ? `${change.toFixed(2)}%` : "\u2014"}
+                <td className={`px-4 py-3 text-right tabular-nums ${colorClass}`}>
+                  {formatPercent(change, 2, { signed: true })}
                 </td>
               </tr>
             );
