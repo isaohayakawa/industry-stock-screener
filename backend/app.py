@@ -117,22 +117,64 @@ def save_ticker_metrics(symbol, data, timestamp):
 # Ranking presets
 # ---------------------------------------------------------------------------
 
-def score_ticker(ticker, preset):
-    """Lower P/E and P/S are better (cheaper); higher revenue growth is better.
-    We normalize by inverting valuation metrics so higher score = better rank."""
-    pe = ticker.pe_ratio or 0
-    ps = ticker.price_to_sales or 0
-    growth = ticker.revenue_growth or 0
+PRESETS = ("balanced", "valuation", "growth")
 
-    valuation_score = -(pe) - (ps)  # less negative (higher) is cheaper
-    growth_score = growth
+# (attribute, higher_is_better). Valuation multiples are better when lower;
+# a non-positive multiple (e.g. negative P/E from losses) ranks last.
+VALUATION_METRICS = (("pe_ratio", False), ("price_to_sales", False))
+GROWTH_METRICS = (("revenue_growth", True),)
 
-    if preset == "valuation":
-        return valuation_score
-    if preset == "growth":
-        return growth_score
-    # balanced (default)
-    return 0.5 * valuation_score + 0.5 * growth_score
+
+def percentile_scores(tickers, attr, higher_is_better):
+    """Map symbol -> 0-100 percentile of `attr` among the tickers that have it.
+    100 is best in the group, 0 worst; ties share the average. Tickers missing
+    the value are left out rather than penalized."""
+    values = {}
+    for t in tickers:
+        value = getattr(t, attr)
+        if value is None:
+            continue
+        if not higher_is_better:
+            # Flip so higher is always better; non-positive multiples sink.
+            value = -value if value > 0 else float("-inf")
+        values[t.symbol] = value
+
+    n = len(values)
+    if n == 1:
+        return {symbol: 50.0 for symbol in values}  # no peers to compare against
+
+    scores = {}
+    for symbol, value in values.items():
+        worse = sum(1 for v in values.values() if v < value)
+        ties = sum(1 for v in values.values() if v == value) - 1
+        scores[symbol] = 100 * (worse + 0.5 * ties) / (n - 1)
+    return scores
+
+
+def average(values):
+    values = [v for v in values if v is not None]
+    return sum(values) / len(values) if values else None
+
+
+def peer_scores(tickers):
+    """Score each ticker 0-100 against the others in its industry, for every
+    preset. Returns symbol -> {preset: score or None}."""
+    def group_score(metrics):
+        per_metric = [percentile_scores(tickers, attr, better) for attr, better in metrics]
+        return {t.symbol: average(m.get(t.symbol) for m in per_metric) for t in tickers}
+
+    valuation = group_score(VALUATION_METRICS)
+    growth = group_score(GROWTH_METRICS)
+
+    return {
+        t.symbol: {
+            "valuation": valuation[t.symbol],
+            "growth": growth[t.symbol],
+            # 50/50 when both halves exist; otherwise whichever half does.
+            "balanced": average([valuation[t.symbol], growth[t.symbol]]),
+        }
+        for t in tickers
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -169,12 +211,20 @@ def get_industry_detail(industry_name):
     symbols = [link.ticker for link in links]
     tickers = Ticker.query.filter(Ticker.symbol.in_(symbols)).all()
 
-    ranked = sorted(tickers, key=lambda t: score_ticker(t, preset), reverse=True)
+    if preset not in PRESETS:
+        preset = "balanced"
+
+    scores = peer_scores(tickers)
+    # Highest score first; unscored tickers sink to the bottom.
+    ranked = sorted(
+        tickers,
+        key=lambda t: (scores[t.symbol][preset] is None, -(scores[t.symbol][preset] or 0)),
+    )
 
     return jsonify({
         "industry": industry.to_dict(),
         "ranking": preset,
-        "tickers": [t.to_dict() for t in ranked],
+        "tickers": [{**t.to_dict(), "scores": scores[t.symbol]} for t in ranked],
     })
 
 
