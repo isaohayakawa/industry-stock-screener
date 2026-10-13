@@ -290,7 +290,7 @@ export default function IndustryDetail({ industryName, onBack }) {
         </label>
 
         {!loading && data && (
-          <p className="text-gray-600">
+          <p className="text-xs text-gray-500">
             {isCustom ? (
               <>
                 Sorted by{" "}
