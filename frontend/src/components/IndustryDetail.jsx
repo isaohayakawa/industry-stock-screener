@@ -3,27 +3,28 @@ import { getIndustryDetail, getIndustryDetailSummary } from "../api";
 import RefreshButton from "./RefreshButton";
 import AiSummary from "./AiSummary";
 import RangeBar, { rangePosition } from "./RangeBar";
+import ScoreInfo from "./ScoreInfo";
 import { formatCurrency, formatMarketCap, formatNumber, formatPercent } from "../format";
 
 // `drivers` are the columns each preset's score is computed from (see
-// score_ticker in backend/app.py), so the table can highlight them.
+// peer_scores in backend/app.py), so the table can highlight them.
 const PRESETS = [
   {
     value: "balanced",
     label: "Balanced",
-    description: "a 50/50 blend of low P/E + P/S and high revenue growth",
+    description: "a 50/50 blend of valuation (low P/E + P/S) and revenue growth, vs. industry peers",
     drivers: ["pe_ratio", "price_to_sales", "revenue_growth"],
   },
   {
     value: "valuation",
     label: "Valuation-weighted",
-    description: "lower P/E and P/S rank higher",
+    description: "lower P/E and P/S than industry peers rank higher",
     drivers: ["pe_ratio", "price_to_sales"],
   },
   {
     value: "growth",
     label: "Growth-weighted",
-    description: "higher revenue growth ranks higher",
+    description: "higher revenue growth than industry peers ranks higher",
     drivers: ["revenue_growth"],
   },
 ];
@@ -42,6 +43,15 @@ const DEFAULT_CUSTOM_SORT = { key: "market_cap", dir: "desc" };
 const COLUMNS = [
   { key: "symbol", label: "Symbol", numeric: false },
   { key: "company_name", label: "Company", numeric: false },
+  // Peer-relative 0-100 score for a preset; Custom mode keeps showing the
+  // score of the last preset fetched, so it's passed in.
+  {
+    key: "score",
+    label: "Score",
+    numeric: true,
+    align: "right",
+    sortValue: (t, scorePreset) => t.scores?.[scorePreset],
+  },
   { key: "price", label: "Price", numeric: true, align: "right" },
   { key: "day_change", label: "Day Change", numeric: true, align: "right" },
   // Sorts by where the price sits in the range (near the high first).
@@ -96,8 +106,10 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function formatCell(key, ticker) {
+function formatCell(key, ticker, scorePreset) {
   switch (key) {
+    case "score":
+      return formatNumber(ticker.scores?.[scorePreset], 0);
     case "symbol":
       return ticker.symbol;
     case "company_name":
@@ -208,7 +220,9 @@ export default function IndustryDetail({ industryName, onBack }) {
     const column = COLUMNS.find((c) => c.key === sortKey);
     const multiplier = sortDir === "asc" ? 1 : -1;
 
-    const getValue = column?.sortValue ?? ((t) => t[sortKey]);
+    const getValue = column?.sortValue
+      ? (t) => column.sortValue(t, fetchRanking)
+      : (t) => t[sortKey];
 
     return [...rows].sort((a, b) => {
       const aVal = column?.numeric ? toNumber(getValue(a)) : getValue(a);
@@ -222,10 +236,10 @@ export default function IndustryDetail({ industryName, onBack }) {
       if (column?.numeric) return (aVal - bVal) * multiplier;
       return String(aVal).localeCompare(String(bVal)) * multiplier;
     });
-  }, [rows, isCustom, sortKey, sortDir]);
+  }, [rows, isCustom, sortKey, sortDir, fetchRanking]);
 
   return (
-    <div className="max-w-6xl mx-auto p-6">
+    <div className="max-w-7xl mx-auto p-6">
       <button onClick={onBack} className="text-blue-600 hover:underline mb-4">
         ← Back to industries
       </button>
@@ -294,14 +308,14 @@ export default function IndustryDetail({ industryName, onBack }) {
 
       {!loading && data && (
         <div className="overflow-x-auto">
-          <table className="w-full border border-gray-200 rounded-md overflow-hidden">
-            <thead className="bg-gray-100 text-sm">
+          <table className="w-full text-sm border border-gray-200 rounded-md overflow-hidden">
+            <thead className="bg-gray-100 text-xs">
               <tr>
                 {/* Always rendered so column widths stay put when switching modes;
                     in Custom mode the content is hidden but still takes up space. */}
                 <th
                   title={isCustom ? undefined : `${preset.label} rank`}
-                  className="px-3 py-2 text-left"
+                  className="px-2 py-2 text-left"
                 >
                   <span className={isCustom ? "invisible" : ""}>#</span>
                 </th>
@@ -309,9 +323,9 @@ export default function IndustryDetail({ industryName, onBack }) {
                   const isActive = isCustom && sortKey === column.key;
                   const isDriver = !isCustom && preset.drivers.includes(column.key);
 
-                  const className = `px-3 py-2 cursor-pointer select-none ${
+                  const className = `px-2 py-2 cursor-pointer select-none ${
                     column.align === "right" ? "text-right" : "text-left"
-                  } ${
+                  } ${column.key === "score" ? "whitespace-nowrap" : ""} ${
                     isDriver ? "bg-blue-50 text-blue-800 hover:bg-blue-100" : "hover:bg-gray-200"
                   }`;
 
@@ -335,6 +349,9 @@ export default function IndustryDetail({ industryName, onBack }) {
                         </span>
                       )}
                       {column.label}
+                      {column.key === "score" && (
+                        <ScoreInfo presetLabel={PRESETS.find((p) => p.value === fetchRanking)?.label} />
+                      )}
                       <span className="ml-1 text-gray-400">
                         {isActive ? (sortDir === "asc" ? "\u25B2" : "\u25BC") : "\u21C5"}
                       </span>
@@ -351,13 +368,13 @@ export default function IndustryDetail({ industryName, onBack }) {
 
                 return (
                   <tr key={t.symbol} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 text-gray-500">
+                    <td className="px-2 py-1.5 text-gray-500">
                       <span className={isCustom ? "invisible" : ""}>{index + 1}</span>
                     </td>
                     {COLUMNS.map((column) => (
                       <td
                         key={column.key}
-                        className={`px-3 py-2 ${column.key === "symbol" ? "font-medium" : ""} ${
+                        className={`px-2 py-1.5 ${column.key === "symbol" ? "font-medium" : ""} ${
                           column.align === "right" ? "text-right tabular-nums whitespace-nowrap" : ""
                         } ${
                           column.key === "year_range" ? "whitespace-nowrap" : ""
@@ -365,7 +382,7 @@ export default function IndustryDetail({ industryName, onBack }) {
                           column.key === "day_change" ? colorClass : ""
                         }`}
                       >
-                        {formatCell(column.key, t)}
+                        {formatCell(column.key, t, fetchRanking)}
                       </td>
                     ))}
                   </tr>

@@ -60,7 +60,7 @@ function SummaryTable({ title, rows, onSelectIndustry }) {
   return (
     <div>
       <h2 className="text-sm font-semibold text-gray-700 mb-2">{title}</h2>
-      <table className="w-full border border-gray-200 rounded-md overflow-hidden">
+      <table className="w-full text-sm border border-gray-200 rounded-md overflow-hidden">
         <tbody className="divide-y divide-gray-200">
           {rows.map((industry) => (
             <tr
@@ -235,8 +235,8 @@ export default function IndustryList({ onSelectIndustry }) {
 
       {loading && <p className="text-gray-500">Loading...</p>}
 
-      <table className="w-full border border-gray-200 rounded-md overflow-hidden">
-        <thead className="bg-gray-100 text-sm">
+      <table className="w-full text-sm border border-gray-200 rounded-md overflow-hidden">
+        <thead className="bg-gray-100 text-xs">
           <tr>
             {COLUMNS.map((column) => {
               const isActive = sortKey === column.key;
