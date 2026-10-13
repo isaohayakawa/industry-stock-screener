@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getTickerDetail } from "../api";
 import RefreshButton from "./RefreshButton";
 import RangeBar from "./RangeBar";
+import { SkeletonLines } from "./Skeleton";
 import {
   formatCompactCurrency,
   formatCurrency,
@@ -116,19 +117,6 @@ function Section({ title, children, aside }) {
       </div>
       {children}
     </section>
-  );
-}
-
-function SectionSkeleton({ lines = 3 }) {
-  return (
-    <div className="space-y-2" aria-hidden="true">
-      {Array.from({ length: lines }, (_, i) => (
-        <div
-          key={i}
-          className={`h-3 animate-pulse rounded bg-gray-100 ${i % 2 ? "w-4/6" : "w-full"}`}
-        />
-      ))}
-    </div>
   );
 }
 
@@ -487,13 +475,13 @@ export default function TickerPanel({ row, ranking, industryName, peerCount, onC
           {state.status === "loading" && (
             <>
               <Section title="About">
-                <SectionSkeleton lines={4} />
+                <SkeletonLines lines={4} />
               </Section>
               <Section title="Key ratios">
-                <SectionSkeleton lines={6} />
+                <SkeletonLines lines={6} />
               </Section>
               <Section title="Income statement">
-                <SectionSkeleton lines={5} />
+                <SkeletonLines lines={5} />
               </Section>
             </>
           )}
