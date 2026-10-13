@@ -37,3 +37,12 @@ export function getIndustriesSummary({ signal } = {}) {
 export function getIndustryDetailSummary(industryName, { signal } = {}) {
   return getSummary(`industries/${encodeURIComponent(industryName)}`, signal);
 }
+
+// Profile, ratios, and income statements for the ticker panel.
+export async function getTickerDetail(symbol, { refresh = false, signal } = {}) {
+  const query = refresh ? "?refresh=1" : "";
+  const res = await fetch(`${BASE_URL}/tickers/${encodeURIComponent(symbol)}${query}`, { signal });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || "Failed to load ticker detail");
+  return body;
+}

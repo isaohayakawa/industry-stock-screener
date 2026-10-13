@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getIndustryDetail, getIndustryDetailSummary } from "../api";
 import RefreshButton from "./RefreshButton";
 import AiSummary from "./AiSummary";
 import RangeBar, { rangePosition } from "./RangeBar";
 import ScoreInfo from "./ScoreInfo";
+import TickerPanel from "./TickerPanel";
 import { formatCurrency, formatMarketCap, formatNumber, formatPercent } from "../format";
 
 // `drivers` are the columns each preset's score is computed from (see
@@ -146,6 +147,10 @@ export default function IndustryDetail({ industryName, onBack }) {
   // With a preset selected the rows stay in the order the API ranked them.
   // Clicking a column header switches to Custom and sorts client-side.
   const [sortKey, setSortKey] = useState(DEFAULT_CUSTOM_SORT.key);
+
+  // Symbol of the ticker open in the side panel, or null.
+  const [openSymbol, setOpenSymbol] = useState(null);
+  const closePanel = useCallback(() => setOpenSymbol(null), []);
   const [sortDir, setSortDir] = useState(DEFAULT_CUSTOM_SORT.dir);
 
   const isCustom = ranking === CUSTOM;
@@ -205,6 +210,7 @@ export default function IndustryDetail({ industryName, onBack }) {
   }
 
   const rows = data?.tickers ?? [];
+  const openRow = rows.find((t) => t.symbol === openSymbol);
 
   // The summary doesn't depend on the ranking, so key it on the tickers'
   // fetch times: it reloads after a refresh but not on a ranking change.
@@ -371,7 +377,13 @@ export default function IndustryDetail({ industryName, onBack }) {
                   change == null ? "" : change >= 0 ? "text-green-600" : "text-red-600";
 
                 return (
-                  <tr key={t.symbol} className="hover:bg-gray-50">
+                  <tr
+                    key={t.symbol}
+                    onClick={() => setOpenSymbol(t.symbol)}
+                    className={`cursor-pointer ${
+                      t.symbol === openSymbol ? "bg-blue-50" : "hover:bg-gray-50"
+                    }`}
+                  >
                     <td className="px-2 py-1.5 text-gray-500">
                       <span className={isCustom ? "invisible" : ""}>{index + 1}</span>
                     </td>
@@ -386,7 +398,18 @@ export default function IndustryDetail({ industryName, onBack }) {
                           column.key === "day_change" ? colorClass : ""
                         }`}
                       >
-                        {formatCell(column.key, t, fetchRanking)}
+                        {column.key === "symbol" ? (
+                          // The row is clickable too; this keeps it reachable by keyboard.
+                          <button
+                            type="button"
+                            onClick={() => setOpenSymbol(t.symbol)}
+                            className="text-blue-600 hover:underline"
+                          >
+                            {t.symbol}
+                          </button>
+                        ) : (
+                          formatCell(column.key, t, fetchRanking)
+                        )}
                       </td>
                     ))}
                   </tr>
@@ -402,6 +425,16 @@ export default function IndustryDetail({ industryName, onBack }) {
             </tbody>
           </table>
         </div>
+      )}
+
+      {openRow && (
+        <TickerPanel
+          row={openRow}
+          ranking={fetchRanking}
+          industryName={industryName}
+          peerCount={rows.length}
+          onClose={closePanel}
+        />
       )}
     </div>
   );

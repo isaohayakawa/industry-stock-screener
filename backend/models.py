@@ -71,3 +71,23 @@ class Ticker(db.Model):
             "year_high": self.year_high,
             "last_fetched": self.last_fetched.isoformat() if self.last_fetched else None,
         }
+
+
+class TickerDetail(db.Model):
+    """Extra per-symbol data for the ticker panel, fetched only when a ticker
+    is opened. Stored as the shapes fmp_client.fetch_ticker_details returns."""
+    __tablename__ = "ticker_details"
+
+    symbol = db.Column(db.String(20), primary_key=True)
+    profile = db.Column(db.JSON)
+    ratios = db.Column(db.JSON)
+    income_statements = db.Column(db.JSON)
+    last_fetched = db.Column(db.DateTime)
+
+    def to_dict(self):
+        return {
+            "profile": self.profile,
+            "ratios": self.ratios,
+            "income_statements": self.income_statements,
+            "last_fetched": self.last_fetched.isoformat() if self.last_fetched else None,
+        }

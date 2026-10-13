@@ -7,9 +7,10 @@ load_dotenv()  # must run before anything reads os.environ
 import anthropic
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from werkzeug.exceptions import HTTPException
 
-from models import db, Industry, IndustryTicker, Ticker
+from models import db, Industry, IndustryTicker, Ticker, TickerDetail
 import fmp_client
 import ai_summary
 from cache import is_stale, now
@@ -156,24 +157,38 @@ def average(values):
     return sum(values) / len(values) if values else None
 
 
-def peer_scores(tickers):
-    """Score each ticker 0-100 against the others in its industry, for every
-    preset. Returns symbol -> {preset: score or None}."""
+def metric_percentiles(tickers):
+    """symbol -> {metric: 0-100 percentile among these tickers, or None}."""
+    per_metric = {
+        attr: percentile_scores(tickers, attr, better)
+        for attr, better in VALUATION_METRICS + GROWTH_METRICS
+    }
+    return {
+        t.symbol: {attr: scores.get(t.symbol) for attr, scores in per_metric.items()}
+        for t in tickers
+    }
+
+
+def peer_scores(percentiles):
+    """Combine metric_percentiles into a 0-100 score per preset.
+    Returns symbol -> {preset: score or None}."""
     def group_score(metrics):
-        per_metric = [percentile_scores(tickers, attr, better) for attr, better in metrics]
-        return {t.symbol: average(m.get(t.symbol) for m in per_metric) for t in tickers}
+        return {
+            symbol: average(p[attr] for attr, _ in metrics)
+            for symbol, p in percentiles.items()
+        }
 
     valuation = group_score(VALUATION_METRICS)
     growth = group_score(GROWTH_METRICS)
 
     return {
-        t.symbol: {
-            "valuation": valuation[t.symbol],
-            "growth": growth[t.symbol],
+        symbol: {
+            "valuation": valuation[symbol],
+            "growth": growth[symbol],
             # 50/50 when both halves exist; otherwise whichever half does.
-            "balanced": average([valuation[t.symbol], growth[t.symbol]]),
+            "balanced": average([valuation[symbol], growth[symbol]]),
         }
-        for t in tickers
+        for symbol in percentiles
     }
 
 
@@ -214,7 +229,8 @@ def get_industry_detail(industry_name):
     if preset not in PRESETS:
         preset = "balanced"
 
-    scores = peer_scores(tickers)
+    percentiles = metric_percentiles(tickers)
+    scores = peer_scores(percentiles)
     # Highest score first; unscored tickers sink to the bottom.
     ranked = sorted(
         tickers,
@@ -224,8 +240,49 @@ def get_industry_detail(industry_name):
     return jsonify({
         "industry": industry.to_dict(),
         "ranking": preset,
-        "tickers": [{**t.to_dict(), "scores": scores[t.symbol]} for t in ranked],
+        "tickers": [
+            {**t.to_dict(), "scores": scores[t.symbol], "percentiles": percentiles[t.symbol]}
+            for t in ranked
+        ],
     })
+
+
+@app.route("/api/tickers/<symbol>")
+def get_ticker_detail(symbol):
+    """Profile, ratios, and income statements for the ticker panel. Fetched
+    on first open and cached like everything else; refreshing it also
+    updates the ticker's row in the industry tables."""
+    symbol = symbol.upper()
+    force = request.args.get("refresh") == "1"  # bypass the cache
+
+    detail = db.session.get(TickerDetail, symbol)
+    if force or detail is None or is_stale(detail.last_fetched):
+        fetched = fmp_client.fetch_ticker_details(symbol)
+        if fetched is None:
+            return jsonify({"error": "Ticker not found"}), 404
+
+        timestamp = now()
+        values = {
+            "profile": fetched["profile"],
+            "ratios": fetched["ratios"],
+            "income_statements": fetched["income_statements"],
+            "last_fetched": timestamp,
+        }
+        # Upsert rather than check-then-insert: two requests for the same
+        # new symbol can overlap (e.g. React StrictMode's double fetch in
+        # dev), and the second plain INSERT would fail on the primary key.
+        db.session.execute(
+            sqlite_insert(TickerDetail)
+            .values(symbol=symbol, **values)
+            .on_conflict_do_update(index_elements=["symbol"], set_=values)
+        )
+        save_ticker_metrics(symbol, fetched["metrics"], timestamp)
+        db.session.commit()
+        db.session.expire_all()  # the upsert bypassed the ORM; reload below
+        detail = db.session.get(TickerDetail, symbol)
+
+    ticker = db.session.get(Ticker, symbol)
+    return jsonify({"ticker": ticker.to_dict(), **detail.to_dict()})
 
 
 # ---------------------------------------------------------------------------
