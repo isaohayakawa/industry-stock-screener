@@ -12,19 +12,19 @@ const PRESETS = [
   {
     value: "balanced",
     label: "Balanced",
-    description: "a 50/50 blend of valuation (low P/E + P/S) and revenue growth, vs. industry peers",
+    description: "A 50/50 blend of valuation (low P/E + P/S) and revenue growth, vs. industry peers",
     drivers: ["pe_ratio", "price_to_sales", "revenue_growth"],
   },
   {
     value: "valuation",
     label: "Valuation-weighted",
-    description: "lower P/E and P/S than industry peers rank higher",
+    description: "Lower P/E and P/S than industry peers rank higher",
     drivers: ["pe_ratio", "price_to_sales"],
   },
   {
     value: "growth",
     label: "Growth-weighted",
-    description: "higher revenue growth than industry peers ranks higher",
+    description: "Higher revenue growth than industry peers ranks higher",
     drivers: ["revenue_growth"],
   },
 ];
@@ -244,22 +244,7 @@ export default function IndustryDetail({ industryName, onBack }) {
         ← Back to industries
       </button>
 
-      <div className="flex justify-between items-center mb-1">
-        <h1 className="text-2xl font-semibold">{industryName}</h1>
-
-        <select
-          value={ranking}
-          onChange={(e) => handleRankingChange(e.target.value)}
-          className="border border-gray-300 rounded-md px-3 py-2"
-        >
-          {PRESETS.map((p) => (
-            <option key={p.value} value={p.value}>
-              {p.label}
-            </option>
-          ))}
-          <option value={CUSTOM}>Custom (sort by column)</option>
-        </select>
-      </div>
+      <h1 className="text-2xl font-semibold mb-1">{industryName}</h1>
 
       <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
         {data?.industry && (data.industry.data_date || data.industry.last_fetched) && (
@@ -279,32 +264,51 @@ export default function IndustryDetail({ industryName, onBack }) {
         trigger={summaryTrigger}
       />
 
-      {loading && <p className="text-gray-500">Loading...</p>}
+      {/* Sits right above the table it controls. Always shown, so the
+          ranking can be changed while a fetch is in flight. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2 text-sm">
+        <label className="flex items-center gap-2 font-medium text-gray-700">
+          Rank by
+          <select
+            value={ranking}
+            onChange={(e) => handleRankingChange(e.target.value)}
+            className="border border-gray-300 rounded-md px-2 py-1 font-normal"
+          >
+            {PRESETS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+            <option value={CUSTOM}>Custom (sort by column)</option>
+          </select>
+        </label>
 
-      {!loading && data && (
-        <p className="text-sm text-gray-600 mb-2">
-          {isCustom ? (
-            <>
-              Sorted by{" "}
-              <span className="font-medium">
-                {COLUMNS.find((c) => c.key === sortKey)?.label}{" "}
-                {sortDir === "asc" ? "\u25B2" : "\u25BC"}
-              </span>
-              .{" "}
-              <span className="text-gray-400">Click a column header to change the order.</span>
-            </>
-          ) : (
-            <>
-              Ranked by <span className="font-medium">{preset.label}</span>:{" "}
-              {preset.description}.{" "}
-              <span className="text-gray-400">
-                {"\u2605"} marks the columns used for ranking. Click any column header to sort by
-                it instead.
-              </span>
-            </>
-          )}
-        </p>
-      )}
+        {!loading && data && (
+          <p className="text-gray-600">
+            {isCustom ? (
+              <>
+                Sorted by{" "}
+                <span className="font-medium">
+                  {COLUMNS.find((c) => c.key === sortKey)?.label}{" "}
+                  {sortDir === "asc" ? "\u25B2" : "\u25BC"}
+                </span>
+                .{" "}
+                <span className="text-gray-400">Click a column header to change the order.</span>
+              </>
+            ) : (
+              <>
+                {preset.description}.{" "}
+                <span className="text-gray-400">
+                  {"\u2605"} marks the columns used for ranking. Click any column header to sort by
+                  it instead.
+                </span>
+              </>
+            )}
+          </p>
+        )}
+      </div>
+
+      {loading && <p className="text-gray-500">Loading...</p>}
 
       {!loading && data && (
         <div className="overflow-x-auto">
