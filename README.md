@@ -31,7 +31,7 @@ cp .env.example .env
 python app.py
 ```
 
-The API runs at `http://localhost:5000`. Routes:
+The API runs at `http://localhost:5050`. Routes:
 
 - `GET /api/industries?search=` — list industries (triggers a refresh if stale)
 - `GET /api/industries/<name>?ranking=balanced|valuation|growth` — ranked tickers for one industry
@@ -46,7 +46,7 @@ npm install
 npm run dev
 ```
 
-Opens at `http://localhost:5173` and calls the Flask API at `localhost:5000`.
+Opens at `http://localhost:5173` and calls the Flask API at `localhost:5050`.
 
 ## AI summaries (optional)
 
