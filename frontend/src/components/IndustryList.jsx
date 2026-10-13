@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getIndustries, getIndustriesSummary } from "../api";
 import RefreshButton from "./RefreshButton";
+import { SkeletonRows } from "./Skeleton";
 import AiSummary from "./AiSummary";
 import { formatPercent } from "../format";
 
@@ -56,12 +57,19 @@ function toNumber(value) {
 /**
  * Small ranked table used for the top-5 gainers/losers summaries.
  */
-function SummaryTable({ title, rows, onSelectIndustry }) {
+function SummaryTable({ title, rows, loading, onSelectIndustry }) {
   return (
     <div>
       <h2 className="text-sm font-semibold text-gray-700 mb-2">{title}</h2>
       <table className="w-full text-sm border border-gray-200 rounded-md overflow-hidden">
         <tbody className="divide-y divide-gray-200">
+          {loading && (
+            <SkeletonRows
+              columns={[{}, { align: "right" }]}
+              rows={5}
+              cellClassName="px-4 py-2.5"
+            />
+          )}
           {rows.map((industry) => (
             <tr
               key={industry.id}
@@ -79,7 +87,7 @@ function SummaryTable({ title, rows, onSelectIndustry }) {
             </tr>
           ))}
 
-          {rows.length === 0 && (
+          {!loading && rows.length === 0 && (
             <tr>
               <td colSpan={2} className="px-4 py-2 text-gray-500">
                 No data available.
@@ -100,6 +108,7 @@ export default function IndustryList({ onSelectIndustry }) {
   // Full, unfiltered industry list - used for the top gainers/losers
   // summary so it stays stable while the user is searching the table below.
   const [allIndustries, setAllIndustries] = useState([]);
+  const [allLoaded, setAllLoaded] = useState(false);
 
   // Sort state: which column, and which direction.
   const [sortKey, setSortKey] = useState("name");
@@ -109,7 +118,9 @@ export default function IndustryList({ onSelectIndustry }) {
   const [refreshError, setRefreshError] = useState(null);
 
   useEffect(() => {
-    getIndustries().then(setAllIndustries);
+    getIndustries()
+      .then(setAllIndustries)
+      .finally(() => setAllLoaded(true));
   }, []);
 
   async function handleRefresh() {
@@ -216,11 +227,13 @@ export default function IndustryList({ onSelectIndustry }) {
         <SummaryTable
           title="Top 5 Gainers"
           rows={topGainers}
+          loading={!allLoaded}
           onSelectIndustry={onSelectIndustry}
         />
         <SummaryTable
           title="Top 5 Losers"
           rows={topLosers}
+          loading={!allLoaded}
           onSelectIndustry={onSelectIndustry}
         />
       </div>
@@ -232,8 +245,6 @@ export default function IndustryList({ onSelectIndustry }) {
         onChange={(e) => setSearch(e.target.value)}
         className="w-full border border-gray-300 rounded-md px-3 py-2 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
-
-      {loading && <p className="text-gray-500">Loading...</p>}
 
       <table className="w-full text-sm border border-gray-200 rounded-md overflow-hidden">
         <thead className="bg-gray-100 text-xs">
@@ -262,6 +273,11 @@ export default function IndustryList({ onSelectIndustry }) {
         </thead>
 
         <tbody className="divide-y divide-gray-200">
+          {/* Placeholders only before the first results arrive; while
+              searching, the previous rows stay up until the new ones land. */}
+          {loading && industries.length === 0 && (
+            <SkeletonRows columns={COLUMNS} rows={10} cellClassName="px-4 py-3.5" />
+          )}
           {sorted.map((industry) => {
             // Same coercion as the comparator, so coloring and formatting
             // agree with the sort order no matter what type the API sent.

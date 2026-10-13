@@ -4,6 +4,7 @@ import RefreshButton from "./RefreshButton";
 import AiSummary from "./AiSummary";
 import RangeBar, { rangePosition } from "./RangeBar";
 import ScoreInfo from "./ScoreInfo";
+import { SkeletonRows } from "./Skeleton";
 import TickerPanel from "./TickerPanel";
 import { formatCurrency, formatMarketCap, formatNumber, formatPercent } from "../format";
 
@@ -171,7 +172,7 @@ export default function IndustryDetail({ industryName, onBack }) {
   const [refreshError, setRefreshError] = useState(null);
 
   // Keeps the current table on screen while the backend refetches, rather
-  // than flashing back to "Loading...".
+  // than flashing back to placeholder rows.
   async function handleRefresh() {
     setRefreshing(true);
     setRefreshError(null);
@@ -314,9 +315,8 @@ export default function IndustryDetail({ industryName, onBack }) {
         )}
       </div>
 
-      {loading && <p className="text-gray-500">Loading...</p>}
-
-      {!loading && data && (
+      {/* While loading, the header stays and placeholder rows fill the body. */}
+      {(loading || data) && (
         <div className="overflow-x-auto">
           <table className="w-full text-sm border border-gray-200 rounded-md overflow-hidden">
             <thead className="bg-gray-100 text-xs">
@@ -371,7 +371,8 @@ export default function IndustryDetail({ industryName, onBack }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {sorted.map((t, index) => {
+              {loading && <SkeletonRows columns={[{}, ...COLUMNS]} cellClassName="px-2 py-2.5" />}
+              {!loading && sorted.map((t, index) => {
                 const change = toNumber(t.day_change);
                 const colorClass =
                   change == null ? "" : change >= 0 ? "text-green-600" : "text-red-600";
@@ -415,7 +416,7 @@ export default function IndustryDetail({ industryName, onBack }) {
                   </tr>
                 );
               })}
-              {sorted.length === 0 && (
+              {!loading && sorted.length === 0 && (
                 <tr>
                   <td colSpan={COLUMNS.length + 1} className="px-4 py-3 text-gray-500">
                     No tickers found for this industry.
