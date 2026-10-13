@@ -34,6 +34,7 @@ The API runs at `http://localhost:5000`. Routes:
 
 - `GET /api/industries?search=` — list industries (triggers a refresh if stale)
 - `GET /api/industries/<name>?ranking=balanced|valuation|growth` — ranked tickers for one industry
+- `GET /api/tickers/<symbol>` — profile, TTM ratios, and annual income statements for one ticker (fetched on first open, cached like the rest)
 - `GET /api/health` — health check
 
 ## Frontend setup

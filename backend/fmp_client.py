@@ -75,20 +75,13 @@ def _parse_range(value):
         return None, None
 
 
-def fetch_ticker_metrics(symbol):
-    """Pulls valuation, profitability, and growth metrics for a single ticker.
-    P/E and P/S live in ratios-ttm, not key-metrics-ttm (that endpoint only
-    has enterprise-value/efficiency data, no P/E or P/S at all). Revenue
-    growth comes from income-statement-growth separately."""
-    profile = _get("profile", params={"symbol": symbol})
-    ratios = _get("ratios-ttm", params={"symbol": symbol})
-    growth = _get("income-statement-growth", params={"symbol": symbol, "limit": 1})
+def _first(rows):
+    return rows[0] if rows else {}
 
-    profile_row = profile[0] if profile else {}
-    ratios_row = ratios[0] if ratios else {}
-    growth_row = growth[0] if growth else {}
+
+def _parse_metrics(symbol, profile_row, ratios_row, growth_row):
+    """The per-ticker numbers the industry table shows."""
     year_low, year_high = _parse_range(profile_row.get("range"))
-
     return {
         "symbol": symbol,
         "company_name": profile_row.get("companyName"),
@@ -100,4 +93,94 @@ def fetch_ticker_metrics(symbol):
         "revenue_growth": growth_row.get("growthRevenue"),
         "year_low": year_low,
         "year_high": year_high,
+    }
+
+
+def fetch_ticker_metrics(symbol):
+    """Pulls valuation, profitability, and growth metrics for a single ticker.
+    P/E and P/S live in ratios-ttm, not key-metrics-ttm (that endpoint only
+    has enterprise-value/efficiency data, no P/E or P/S at all). Revenue
+    growth comes from income-statement-growth separately."""
+    profile = _get("profile", params={"symbol": symbol})
+    ratios = _get("ratios-ttm", params={"symbol": symbol})
+    growth = _get("income-statement-growth", params={"symbol": symbol, "limit": 1})
+    return _parse_metrics(symbol, _first(profile), _first(ratios), _first(growth))
+
+
+def _to_int(value):
+    """FMP sends some counts as strings (fullTimeEmployees: "120000")."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def fetch_ticker_details(symbol, years=5):
+    """Everything the ticker panel shows: the table metrics plus company
+    profile, TTM ratios, and the last `years` annual income statements.
+    Returns None when FMP doesn't know the symbol."""
+    profile_row = _first(_get("profile", params={"symbol": symbol}))
+    if not profile_row:
+        return None
+    ratios_row = _first(_get("ratios-ttm", params={"symbol": symbol}))
+    growth_row = _first(_get("income-statement-growth", params={"symbol": symbol, "limit": 1}))
+    statements = _get("income-statement", params={"symbol": symbol, "limit": years})
+
+    return {
+        "metrics": _parse_metrics(symbol, profile_row, ratios_row, growth_row),
+        "profile": {
+            "company_name": profile_row.get("companyName"),
+            "description": profile_row.get("description"),
+            "sector": profile_row.get("sector"),
+            "industry": profile_row.get("industry"),
+            "ceo": profile_row.get("ceo"),
+            "website": profile_row.get("website"),
+            "employees": _to_int(profile_row.get("fullTimeEmployees")),
+            "exchange": profile_row.get("exchange"),
+            "country": profile_row.get("country"),
+            "city": profile_row.get("city"),
+            "state": profile_row.get("state"),
+            "ipo_date": profile_row.get("ipoDate"),
+            "image": profile_row.get("image"),
+            "currency": profile_row.get("currency"),
+            "beta": profile_row.get("beta"),
+            "volume": profile_row.get("volume"),
+            "average_volume": profile_row.get("averageVolume"),
+        },
+        # All trailing twelve months. Margins and yields are fractions.
+        "ratios": {
+            "pe_ratio": ratios_row.get("priceToEarningsRatioTTM"),
+            "peg_ratio": ratios_row.get("priceToEarningsGrowthRatioTTM"),
+            "price_to_sales": ratios_row.get("priceToSalesRatioTTM"),
+            "price_to_book": ratios_row.get("priceToBookRatioTTM"),
+            "price_to_free_cash_flow": ratios_row.get("priceToFreeCashFlowRatioTTM"),
+            "ev_to_ebitda": ratios_row.get("enterpriseValueMultipleTTM"),
+            "enterprise_value": ratios_row.get("enterpriseValueTTM"),
+            "gross_margin": ratios_row.get("grossProfitMarginTTM"),
+            "operating_margin": ratios_row.get("operatingProfitMarginTTM"),
+            "ebitda_margin": ratios_row.get("ebitdaMarginTTM"),
+            "net_margin": ratios_row.get("netProfitMarginTTM"),
+            "current_ratio": ratios_row.get("currentRatioTTM"),
+            "quick_ratio": ratios_row.get("quickRatioTTM"),
+            "debt_to_equity": ratios_row.get("debtToEquityRatioTTM"),
+            "interest_coverage": ratios_row.get("interestCoverageRatioTTM"),
+            "dividend_yield": ratios_row.get("dividendYieldTTM"),
+            "dividend_per_share": ratios_row.get("dividendPerShareTTM"),
+            "payout_ratio": ratios_row.get("dividendPayoutRatioTTM"),
+        },
+        # Newest fiscal year first, as FMP returns them.
+        "income_statements": [
+            {
+                "fiscal_year": row.get("fiscalYear"),
+                "period_end": row.get("date"),
+                "currency": row.get("reportedCurrency"),
+                "revenue": row.get("revenue"),
+                "gross_profit": row.get("grossProfit"),
+                "operating_income": row.get("operatingIncome"),
+                "ebitda": row.get("ebitda"),
+                "net_income": row.get("netIncome"),
+                "eps_diluted": row.get("epsDiluted"),
+            }
+            for row in statements
+        ],
     }

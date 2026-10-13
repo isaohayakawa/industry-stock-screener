@@ -46,16 +46,27 @@ export function formatPercent(value, digits = 2, { signed = false } = {}) {
   }).format(value)}%`;
 }
 
-/** 11_300_000_000 -> "$11.3B"; picks T/B/M so large and small caps both read well. */
-export function formatMarketCap(value) {
-  if (!isUsable(value) || value <= 0) return DASH;
+/**
+ * -54_500_000 -> "-$54.5M"; picks T/B/M so large and small values both read
+ * well. `prefix` is the currency symbol ("" for non-USD figures).
+ */
+export function formatCompactCurrency(value, prefix = "$") {
+  if (!isUsable(value)) return DASH;
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
   const units = [
     [1e12, "T"],
     [1e9, "B"],
     [1e6, "M"],
   ];
   for (const [size, suffix] of units) {
-    if (value >= size) return `$${formatNumber(value / size, 1)}${suffix}`;
+    if (abs >= size) return `${sign}${prefix}${formatNumber(abs / size, 1)}${suffix}`;
   }
-  return formatCurrency(value, 0);
+  return `${sign}${prefix}${formatNumber(abs, 0)}`;
+}
+
+/** 11_300_000_000 -> "$11.3B". Non-positive caps are bad data, shown as a dash. */
+export function formatMarketCap(value) {
+  if (!isUsable(value) || value <= 0) return DASH;
+  return formatCompactCurrency(value);
 }
